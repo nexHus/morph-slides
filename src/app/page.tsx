@@ -23,7 +23,7 @@ import {
   Flame,
 } from "lucide-react";
 
-// Safe Web Audio API: Soft Pneumatic Air Release
+// Safe Web Audio API: Soft Pneumatic Brake Air Release
 class TrainAudioEngine {
   private ctx: AudioContext | null = null;
   public isMuted: boolean = false;
@@ -52,7 +52,7 @@ class TrainAudioEngine {
 
     try {
       const now = this.ctx.currentTime;
-      const bufferSize = Math.floor(this.ctx.sampleRate * 0.7);
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.6);
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
@@ -62,11 +62,11 @@ class TrainAudioEngine {
       const filter = this.ctx.createBiquadFilter();
       filter.type = "bandpass";
       filter.frequency.setValueAtTime(650, now);
-      filter.frequency.exponentialRampToValueAtTime(250, now + 0.65);
+      filter.frequency.exponentialRampToValueAtTime(250, now + 0.55);
 
       const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.025, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+      gain.gain.setValueAtTime(0.03, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
 
       noise.connect(filter);
       filter.connect(gain);
@@ -468,20 +468,24 @@ const SLIDES: Slide[] = [
   },
 ];
 
-// Luxurious, slow, floating spring for tracks & markers
-const slowFloatingSpring: Transition = {
+// Physical momentum spring: Start and end velocities move in lockstep
+const trainTransitSpring: Transition = {
   type: "spring" as const,
-  stiffness: 75,
-  damping: 22,
-  mass: 1.1,
+  stiffness: 65,
+  damping: 18,
+  mass: 1.2,
 };
 
-export default function TrainCabinDeck() {
+export default function CoupledTrainDeck() {
   const [current, setCurrent] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const isUpdatingRef = useRef(false);
   const audioRef = useRef<TrainAudioEngine | null>(null);
+
+  // Mobile Touch Swipe references
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -496,24 +500,28 @@ export default function TrainCabinDeck() {
     return audioRef.current;
   }, []);
 
-  const sendSync = useCallback(async (newIndex: number) => {
-    isUpdatingRef.current = true;
-    getAudio().releaseBrakes();
-    try {
-      await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slide: newIndex }),
-      });
-    } catch {
-      // safe fallback
-    } finally {
-      setTimeout(() => {
-        isUpdatingRef.current = false;
-      }, 400);
-    }
-  }, [getAudio]);
+  const sendSync = useCallback(
+    async (newIndex: number) => {
+      isUpdatingRef.current = true;
+      getAudio().releaseBrakes();
+      try {
+        await fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slide: newIndex }),
+        });
+      } catch {
+        // safe fallback
+      } finally {
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 350);
+      }
+    },
+    [getAudio]
+  );
 
+  // Poll for sync updates from phone or PC every 400ms
   useEffect(() => {
     if (!isMounted) return;
 
@@ -536,7 +544,7 @@ export default function TrainCabinDeck() {
       } catch {
         // safe skip
       }
-    }, 450);
+    }, 400);
 
     return () => clearInterval(interval);
   }, [current, isMounted, getAudio]);
@@ -557,6 +565,7 @@ export default function TrainCabinDeck() {
     });
   }, [sendSync]);
 
+  // Keyboard navigation on PC
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (["ArrowRight", "Space"].includes(e.code)) {
@@ -577,13 +586,34 @@ export default function TrainCabinDeck() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [nextSlide, prevSlide]);
 
-  const slide = SLIDES[current];
-  const IconComponent = slide.icon;
+  // Native Mobile Touch Swipe Listeners
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchEndX.current = null;
+    touchStartX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+    const distance = touchStartX.current - touchEndX.current;
+    if (distance > 50) {
+      // Swiped Left -> Advance
+      nextSlide();
+    } else if (distance < -50) {
+      // Swiped Right -> Previous
+      prevSlide();
+    }
+  };
+
+  const activeSlide = SLIDES[current];
 
   if (!isMounted) {
     return (
-      <div className="w-screen h-screen bg-[#060608] flex items-center justify-center text-neutral-400 font-mono text-xs">
-        Docking Train Cabin...
+      <div className="w-screen h-[100dvh] bg-[#060608] flex items-center justify-center text-neutral-400 font-mono text-xs">
+        Coupling Train Cars...
       </div>
     );
   }
@@ -591,7 +621,10 @@ export default function TrainCabinDeck() {
   return (
     <main
       suppressHydrationWarning
-      className="relative w-screen h-screen bg-[#070709] text-[#f4f4f5] flex flex-col justify-between overflow-hidden font-sans select-none"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-screen h-[100dvh] bg-[#070709] text-[#f4f4f5] flex flex-col justify-between overflow-hidden font-sans select-none pb-20 md:pb-0"
     >
       {/* GLOBAL SCROLLBAR HIDER */}
       <style jsx global>{`
@@ -606,11 +639,11 @@ export default function TrainCabinDeck() {
         }
       `}</style>
 
-      {/* TOP HEADER: MINIMAL TRANSIT ROUTE & SLOW DRIFTING TRAIN */}
-      <header className="relative z-30 w-full px-6 md:px-12 pt-4 md:pt-6 flex flex-col gap-2 shrink-0">
+      {/* TOP HEADER: TRANSIT ROUTE & TRAIN POSITION */}
+      <header className="relative z-30 w-full px-4 md:px-12 pt-3 md:pt-6 flex flex-col gap-1.5 shrink-0">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/90 border border-neutral-800 text-[11px] font-mono text-neutral-400">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="flex items-center gap-1.5 md:gap-2 px-2.5 py-1 rounded-full bg-neutral-900/90 border border-neutral-800 text-[10px] md:text-[11px] font-mono text-neutral-400">
               {isMobile ? (
                 <Smartphone className="w-3.5 h-3.5 text-amber-400" />
               ) : (
@@ -620,13 +653,13 @@ export default function TrainCabinDeck() {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
 
-            <span className="text-[11px] font-mono tracking-widest uppercase text-neutral-500 hidden sm:inline">
-              AMAL EXPRESS • {slide.carNumber}
+            <span className="text-[10px] md:text-[11px] font-mono tracking-widest uppercase text-neutral-500 hidden sm:inline">
+              AMAL EXPRESS • {activeSlide.carNumber}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
-            <span className="font-bold text-white">
+            <span className="font-bold text-white text-sm">
               {String(current + 1).padStart(2, "0")}
             </span>
             <span>/</span>
@@ -634,12 +667,12 @@ export default function TrainCabinDeck() {
           </div>
         </div>
 
-        {/* Top Railroad Track with Smooth Damped Float */}
-        <div className="relative w-full h-1 bg-neutral-900 rounded-full overflow-visible border border-neutral-800/80 mt-1">
+        {/* Top Progress Rail with Floating Train Marker */}
+        <div className="relative w-full h-1 bg-neutral-900 rounded-full overflow-visible border border-neutral-800/80 mt-0.5">
           <motion.div
             className="absolute -top-1.5 h-4 px-2.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-[9px] font-black font-mono text-black -translate-x-1/2"
             animate={{ left: `${((current + 1) / SLIDES.length) * 100}%` }}
-            transition={slowFloatingSpring}
+            transition={trainTransitSpring}
           >
             🚂
           </motion.div>
@@ -647,278 +680,338 @@ export default function TrainCabinDeck() {
       </header>
 
       {/* ========================================================================= */}
-      {/* CENTER STAGE: LUXURY TRAIN CABIN WITH SLOW GLIDE & MOTORIZED GLASS SHUTTER */}
+      {/* CENTER STAGE: THE PHYSICAL INTERCONNECTED TRAIN                           */}
+      {/* Shifts from Right to Left simultaneously with 100% sync                   */}
       {/* ========================================================================= */}
-      <div className="relative z-20 w-full max-w-7xl mx-auto px-4 md:px-10 my-auto">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={slide.id}
-            // 1. SLOW, CINEMATIC HEAVY-MOMENTUM GLIDE ARRIVAL
-            initial={{ x: 60, opacity: 0, filter: "blur(4px)" }}
-            animate={{
-              x: [60, 0, -2, 1, 0],
-              y: [0, -1, 1, -0.5, 0],
-              opacity: 1,
-              filter: "blur(0px)",
-            }}
-            exit={{
-              x: -50,
-              opacity: 0,
-              filter: "blur(4px)",
-              transition: { duration: 0.65, ease: [0.32, 0, 0.67, 0] },
-            }}
-            transition={{
-              duration: 1.25,
-              times: [0, 0.6, 0.78, 0.9, 1],
-              ease: [0.16, 1, 0.3, 1], // Slow exponential deceleration curve
-            }}
-            className="relative w-full rounded-[28px] md:rounded-[36px] bg-[#0d0d10] border border-neutral-800/90 shadow-[0_30px_70px_-20px_rgba(0,0,0,0.95)] overflow-hidden"
-          >
-            {/* CABIN STEEL RIVETS */}
-            <div className="absolute top-3.5 left-3.5 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
-            <div className="absolute top-3.5 right-3.5 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
-            <div className="absolute bottom-3.5 left-3.5 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
-            <div className="absolute bottom-3.5 right-3.5 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
+      <div className="relative w-full z-20 my-auto overflow-visible py-1">
+        <motion.div
+          animate={{
+            x: isMobile
+              ? `calc(4vw - ${current} * (92vw + 24px))`
+              : `calc(5vw - ${current} * (90vw + 48px))`,
+          }}
+          transition={trainTransitSpring}
+          className="flex items-center"
+        >
+          {SLIDES.map((slide, idx) => {
+            const isCurrent = idx === current;
+            const IconComponent = slide.icon;
 
-            {/* CABIN CHASSIS ROOF TRIM */}
-            <div className="w-full h-8 bg-[#111115] border-b border-neutral-800/60 px-6 flex items-center justify-between text-[10px] font-mono tracking-widest text-neutral-500 uppercase">
-              <div className="flex items-center gap-3">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400/90 animate-pulse" />
-                <span>{slide.carNumber}</span>
-                <span>•</span>
-                <span>{slide.compartmentName}</span>
-              </div>
-              <div className="hidden sm:block text-neutral-600">SMOOTH TRANSIT • PLATFORM DOCKED</div>
-            </div>
+            return (
+              <React.Fragment key={slide.id}>
+                {/* 1. TRAIN CARRIAGE / CABIN BOX */}
+                <motion.div
+                  animate={{
+                    scale: isCurrent ? 1 : 0.94,
+                    opacity: isCurrent ? 1 : 0.35,
+                  }}
+                  transition={trainTransitSpring}
+                  style={{
+                    width: isMobile ? "92vw" : "90vw",
+                  }}
+                  className="relative shrink-0 rounded-[24px] md:rounded-[36px] bg-[#0d0d11] border-2 border-neutral-800 shadow-[0_30px_70px_-20px_rgba(0,0,0,0.95)] overflow-hidden"
+                >
+                  {/* CABIN STEEL RIVETS */}
+                  <div className="absolute top-3 left-3 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
+                  <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
+                  <div className="absolute bottom-3 left-3 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
+                  <div className="absolute bottom-3 right-3 w-1.5 h-1.5 rounded-full border border-neutral-700/60 bg-neutral-800/80 pointer-events-none" />
 
-            {/* =================================================================== */}
-            {/* 2. SLOW MOTORIZED TINTED GLASS WINDOW (ROLLS UP HYDRAULICALLY)      */}
-            {/* =================================================================== */}
-            <motion.div
-              initial={{ y: "0%" }}
-              animate={{ y: "-102%" }}
-              transition={{
-                delay: 0.45,
-                duration: 1.1,
-                ease: [0.22, 1, 0.36, 1], // Smooth hydraulic lift curve
-              }}
-              className="absolute inset-0 z-30 bg-neutral-900/90 backdrop-blur-2xl border-b-2 border-neutral-600/70 flex flex-col justify-end pointer-events-none shadow-2xl"
-            >
-              {/* Glass Glare Reflection Sheen */}
-              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.05] to-transparent pointer-events-none" />
-              
-              {/* Brushed Stainless Steel Window Pull Bar */}
-              <div className="w-full pb-3 flex justify-center items-center">
-                <div className="w-28 h-1.5 rounded-full bg-neutral-700/80 border border-neutral-500/50 shadow-sm" />
-              </div>
-            </motion.div>
-
-            {/* =================================================================== */}
-            {/* 3. CALM INTERIOR CONTENT (BLOOMS SLOWLY INTO SHARPNESS)             */}
-            {/* =================================================================== */}
-            <div className="p-6 md:p-10 max-h-[72vh] overflow-y-auto">
-              <motion.div
-                initial={{ opacity: 0, y: 12, filter: "blur(3px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                transition={{
-                  delay: 0.65,
-                  duration: 0.85,
-                  ease: "easeOut",
-                }}
-                className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center"
-              >
-                {/* LEFT: NARRATIVE CONTENT */}
-                <div className="lg:col-span-7 flex flex-col gap-4">
-                  {/* Tag + Icon Badge */}
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-neutral-900/80 border border-neutral-800 text-amber-400 shadow-sm">
-                      <IconComponent className="w-4 h-4" />
+                  {/* CARRIAGE METALLIC ROOF CURVE & STATUS PLATE */}
+                  <div className="w-full h-7 md:h-8 bg-[#121217] border-b border-neutral-800/70 px-4 md:px-6 flex items-center justify-between text-[10px] font-mono tracking-widest text-neutral-500 uppercase">
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isCurrent ? "bg-amber-400 animate-pulse" : "bg-neutral-600"}`} />
+                      <span className="text-neutral-400">{slide.carNumber}</span>
+                      <span>•</span>
+                      <span className="hidden sm:inline">{slide.compartmentName}</span>
                     </div>
-                    <span className="text-xs font-mono tracking-widest uppercase text-neutral-400">
-                      {slide.tag}
-                    </span>
+                    <div className="text-[9px] md:text-[10px] text-neutral-600">
+                      {isCurrent ? "DOCKED • ACTIVE" : "COUPLED"}
+                    </div>
                   </div>
 
-                  {/* Heading */}
-                  <div className="space-y-1">
-                    <h1 className="text-2xl md:text-4xl lg:text-5xl font-black tracking-tight text-white leading-tight">
-                      {slide.title}
-                    </h1>
-                    {slide.subtitle && (
-                      <p className="text-xs md:text-base text-neutral-400 font-normal leading-relaxed">
-                        {slide.subtitle}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Quote Block */}
-                  {slide.quote && (
-                    <div className="p-3.5 rounded-xl bg-neutral-900/50 border border-neutral-800/80 text-xs md:text-sm text-neutral-300 italic">
-                      {slide.quote}
+                  {/* 2. MOTORIZED TINTED GLASS WINDOW (ROLLS UP SLOWLY) */}
+                  <motion.div
+                    animate={{
+                      y: isCurrent ? "-102%" : "0%",
+                    }}
+                    transition={{
+                      delay: isCurrent ? 0.45 : 0,
+                      duration: 1.1,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                    className="absolute inset-0 z-30 bg-neutral-900/90 backdrop-blur-2xl border-b-2 border-neutral-600/70 flex flex-col justify-end pointer-events-none shadow-2xl"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.05] to-transparent pointer-events-none" />
+                    <div className="w-full pb-3 flex justify-center items-center">
+                      <div className="w-24 md:w-28 h-1.5 rounded-full bg-neutral-700/80 border border-neutral-500/50 shadow-sm" />
                     </div>
-                  )}
+                  </motion.div>
 
-                  {/* Cards Grid */}
-                  {slide.cards && (
-                    <div
-                      className={`grid gap-3 ${
-                        slide.cards.length === 2
-                          ? "grid-cols-1 sm:grid-cols-2"
-                          : slide.cards.length === 3
-                          ? "grid-cols-1 sm:grid-cols-3"
-                          : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                      }`}
+                  {/* 3. CABIN INTERIOR CONTENT */}
+                  <div className="p-4 md:p-8 max-h-[56dvh] md:max-h-[72vh] overflow-y-auto">
+                    <motion.div
+                      animate={{
+                        opacity: isCurrent ? 1 : 0.6,
+                        y: isCurrent ? 0 : 8,
+                      }}
+                      transition={{ delay: 0.65, duration: 0.85, ease: "easeOut" }}
+                      className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-8 items-center"
                     >
-                      {slide.cards.map((card, idx) => {
-                        const CardIcon = card.icon || Check;
-                        return (
+                      {/* LEFT: TEXT & CARDS */}
+                      <div className="lg:col-span-7 flex flex-col gap-3 md:gap-3.5">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 md:p-2 rounded-xl bg-neutral-900/80 border border-neutral-800 text-amber-400 shadow-sm">
+                            <IconComponent className="w-4 h-4" />
+                          </div>
+                          <span className="text-[11px] md:text-xs font-mono tracking-widest uppercase text-neutral-400">
+                            {slide.tag}
+                          </span>
+                        </div>
+
+                        <div className="space-y-0.5 md:space-y-1">
+                          <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-black tracking-tight text-white leading-tight">
+                            {slide.title}
+                          </h1>
+                          {slide.subtitle && (
+                            <p className="text-[11px] md:text-sm text-neutral-400 font-normal leading-relaxed">
+                              {slide.subtitle}
+                            </p>
+                          )}
+                        </div>
+
+                        {slide.quote && (
+                          <div className="p-2.5 md:p-3 rounded-xl bg-neutral-900/50 border border-neutral-800/80 text-[11px] md:text-xs text-neutral-300 italic">
+                            {slide.quote}
+                          </div>
+                        )}
+
+                        {slide.cards && (
                           <div
-                            key={idx}
-                            className="p-4 rounded-xl bg-[#121216] border border-neutral-800/70 flex flex-col gap-2 hover:border-neutral-700/80 transition-colors"
+                            className={`grid gap-2 md:gap-2.5 ${
+                              slide.cards.length === 2
+                                ? "grid-cols-1 sm:grid-cols-2"
+                                : slide.cards.length === 3
+                                ? "grid-cols-1 sm:grid-cols-3"
+                                : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                            }`}
                           >
-                            <div className="flex items-center gap-2">
-                              <CardIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              <div className="text-xs md:text-sm font-bold text-white tracking-tight">
-                                {card.title}
+                            {slide.cards.map((card, cIdx) => {
+                              const CardIcon = card.icon || Check;
+                              return (
+                                <div
+                                  key={cIdx}
+                                  className="p-3 md:p-3.5 rounded-xl bg-[#121217] border border-neutral-800/70 flex flex-col gap-1 md:gap-1.5"
+                                >
+                                  <div className="flex items-center gap-1.5 md:gap-2">
+                                    <CardIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    <div className="text-xs md:text-sm font-bold text-white tracking-tight">
+                                      {card.title}
+                                    </div>
+                                  </div>
+
+                                  {card.subtitle && (
+                                    <div className="text-[10px] md:text-[11px] text-neutral-400 font-medium">
+                                      {card.subtitle}
+                                    </div>
+                                  )}
+
+                                  <ul className="space-y-0.5 md:space-y-1 mt-0.5">
+                                    {card.points.map((pt, pIdx) => (
+                                      <li
+                                        key={pIdx}
+                                        className="text-[10px] md:text-xs text-neutral-300 flex items-start gap-1.5 leading-relaxed"
+                                      >
+                                        <span className="text-neutral-500 shrink-0 mt-0.5">•</span>
+                                        <span>{pt}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {slide.comparison && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-3">
+                            <div className="p-3 md:p-3.5 rounded-xl bg-neutral-900/40 border border-red-950/40 space-y-1 md:space-y-1.5">
+                              <div className="text-[10px] md:text-[11px] font-mono uppercase tracking-wider text-red-400 font-bold">
+                                {slide.comparison.vague.title}
+                              </div>
+                              <div className="text-xs md:text-sm font-medium text-neutral-200">
+                                {slide.comparison.vague.text}
+                              </div>
+                              <div className="text-[10px] md:text-[11px] text-neutral-400 leading-relaxed pt-1 border-t border-neutral-800/50">
+                                {slide.comparison.vague.note}
                               </div>
                             </div>
 
-                            {card.subtitle && (
-                              <div className="text-[11px] text-neutral-400 font-medium">
-                                {card.subtitle}
+                            <div className="p-3 md:p-3.5 rounded-xl bg-neutral-900/50 border border-emerald-950/50 space-y-1 md:space-y-1.5">
+                              <div className="text-[10px] md:text-[11px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
+                                {slide.comparison.specific.title}
                               </div>
-                            )}
-
-                            <ul className="space-y-1.5 mt-1">
-                              {card.points.map((pt, pIdx) => (
-                                <li
-                                  key={pIdx}
-                                  className="text-[11px] md:text-xs text-neutral-300 flex items-start gap-1.5 leading-relaxed"
-                                >
-                                  <span className="text-neutral-500 shrink-0 mt-0.5">•</span>
-                                  <span>{pt}</span>
-                                </li>
-                              ))}
-                            </ul>
+                              <div className="text-xs md:text-sm font-medium text-white">
+                                {slide.comparison.specific.text}
+                              </div>
+                              <div className="text-[10px] md:text-[11px] text-neutral-400 leading-relaxed pt-1 border-t border-neutral-800/50">
+                                {slide.comparison.specific.note}
+                              </div>
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        )}
 
-                  {/* Vague vs Specific Comparison */}
-                  {slide.comparison && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="p-4 rounded-xl bg-neutral-900/40 border border-red-950/40 space-y-2">
-                        <div className="text-[11px] font-mono uppercase tracking-wider text-red-400 font-bold">
-                          {slide.comparison.vague.title}
-                        </div>
-                        <div className="text-sm md:text-base font-medium text-neutral-200">
-                          {slide.comparison.vague.text}
-                        </div>
-                        <div className="text-[11px] text-neutral-400 leading-relaxed pt-1.5 border-t border-neutral-800/50">
-                          {slide.comparison.vague.note}
-                        </div>
+                        {slide.callout && (
+                          <div className="p-2.5 md:p-3 rounded-xl bg-neutral-900/70 border border-neutral-800 flex flex-col sm:flex-row sm:items-center gap-1 text-[11px] md:text-xs text-neutral-300">
+                            <span className="font-bold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                              <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
+                              {slide.callout.label}:
+                            </span>
+                            <span className="text-neutral-400">{slide.callout.text}</span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="p-4 rounded-xl bg-neutral-900/50 border border-emerald-950/50 space-y-2">
-                        <div className="text-[11px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
-                          {slide.comparison.specific.title}
-                        </div>
-                        <div className="text-sm md:text-base font-medium text-white">
-                          {slide.comparison.specific.text}
-                        </div>
-                        <div className="text-[11px] text-neutral-400 leading-relaxed pt-1.5 border-t border-neutral-800/50">
-                          {slide.comparison.specific.note}
+                      {/* RIGHT: TRAIN CARRIAGE WINDOW */}
+                      <div className="lg:col-span-5 flex justify-center">
+                        <div className="relative w-full aspect-[16/9] sm:aspect-[4/3] lg:aspect-[4/5] rounded-2xl md:rounded-3xl overflow-hidden border border-neutral-800 shadow-2xl bg-neutral-950 group">
+                          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent z-10 pointer-events-none" />
+
+                          <img
+                            src={slide.image}
+                            alt={slide.title}
+                            className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-1000 ease-out"
+                          />
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
+
+                          <div className="absolute bottom-3 left-3 right-3 z-20 flex items-center justify-between text-[11px] md:text-xs font-mono text-white/80">
+                            <span className="tracking-widest uppercase">AMAL EXPRESS</span>
+                            <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[10px]">
+                              Window View {idx + 1}
+                            </span>
+                          </div>
                         </div>
                       </div>
+                    </motion.div>
+                  </div>
+
+                  {/* UNDERCARRIAGE STEEL WHEELS */}
+                  <div className="w-full h-2.5 md:h-3 bg-[#0a0a0d] border-t border-neutral-800/70 flex justify-between px-8 md:px-16 pointer-events-none">
+                    <div className="flex gap-1.5 md:gap-2 -mt-1 md:-mt-1.5">
+                      <motion.div
+                        animate={{ rotate: current * 360 }}
+                        transition={trainTransitSpring}
+                        className="w-3.5 h-3.5 md:w-4 md:h-4 rounded-full border border-dashed border-amber-400/80 bg-neutral-900"
+                      />
+                      <motion.div
+                        animate={{ rotate: current * 360 }}
+                        transition={trainTransitSpring}
+                        className="w-3.5 h-3.5 md:w-4 md:h-4 rounded-full border border-dashed border-amber-400/80 bg-neutral-900"
+                      />
                     </div>
-                  )}
-
-                  {/* Callout Footer */}
-                  {slide.callout && (
-                    <div className="p-3.5 rounded-xl bg-neutral-900/70 border border-neutral-800 flex flex-col sm:flex-row sm:items-center gap-1.5 text-xs text-neutral-300">
-                      <span className="font-bold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
-                        <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-                        {slide.callout.label}:
-                      </span>
-                      <span className="text-neutral-400">{slide.callout.text}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* RIGHT: PANORAMIC TRAIN CABIN WINDOW */}
-                <div className="lg:col-span-5 flex justify-center">
-                  <div className="relative w-full aspect-[4/3] lg:aspect-[4/5] rounded-3xl overflow-hidden border border-neutral-800 shadow-2xl bg-neutral-950 group">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent z-10 pointer-events-none" />
-
-                    <img
-                      src={slide.image}
-                      alt={slide.title}
-                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-1000 ease-out"
-                    />
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
-
-                    <div className="absolute bottom-4 left-4 right-4 z-20 flex items-center justify-between text-xs font-mono text-white/80">
-                      <span className="tracking-widest uppercase">AMAL EXPRESS</span>
-                      <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10">
-                        Window View {current + 1}
-                      </span>
+                    <div className="flex gap-1.5 md:gap-2 -mt-1 md:-mt-1.5">
+                      <motion.div
+                        animate={{ rotate: current * 360 }}
+                        transition={trainTransitSpring}
+                        className="w-3.5 h-3.5 md:w-4 md:h-4 rounded-full border border-dashed border-amber-400/80 bg-neutral-900"
+                      />
+                      <motion.div
+                        animate={{ rotate: current * 360 }}
+                        transition={trainTransitSpring}
+                        className="w-3.5 h-3.5 md:w-4 md:h-4 rounded-full border border-dashed border-amber-400/80 bg-neutral-900"
+                      />
                     </div>
                   </div>
-                </div>
-              </motion.div>
-            </div>
+                </motion.div>
 
-            {/* CABIN STEEL WHEELS / BOGIE SUSPENSION (UNDER THE CARRIAGE) */}
-            <div className="w-full h-2.5 bg-[#0a0a0d] border-t border-neutral-800/60 flex justify-between px-16">
-              <div className="flex gap-2 -mt-1">
-                <div className="w-3.5 h-3.5 rounded-full border border-neutral-700 bg-neutral-900" />
-                <div className="w-3.5 h-3.5 rounded-full border border-neutral-700 bg-neutral-900" />
-              </div>
-              <div className="flex gap-2 -mt-1">
-                <div className="w-3.5 h-3.5 rounded-full border border-neutral-700 bg-neutral-900" />
-                <div className="w-3.5 h-3.5 rounded-full border border-neutral-700 bg-neutral-900" />
-              </div>
-            </div>
-          </motion.div>
-        </AnimatePresence>
+                {/* 4. ACCORDION GANGWAY BELLOWS (COUPLER) */}
+                {idx < SLIDES.length - 1 && (
+                  <div
+                    style={{ width: isMobile ? "24px" : "48px" }}
+                    className="shrink-0 flex flex-col justify-center items-center px-0.5"
+                  >
+                    <div className="w-full h-32 md:h-40 rounded bg-neutral-900 border-y border-neutral-700/80 flex justify-between p-0.5 shadow-inner">
+                      {[...Array(3)].map((_, bIdx) => (
+                        <div key={bIdx} className="h-full w-0.5 bg-neutral-800" />
+                      ))}
+                    </div>
+                    <div className="w-6 md:w-8 h-2 md:h-2.5 bg-neutral-700 rounded-sm mt-1 border border-neutral-500 shadow-md flex items-center justify-center">
+                      <div className="w-1.5 md:w-2 h-0.5 bg-amber-400 rounded-full" />
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </motion.div>
       </div>
 
-      {/* BOTTOM RAILROAD TRACK (DAMPED MOMENTUM) */}
-      <div className="relative w-full h-6 pointer-events-none overflow-hidden flex flex-col justify-end shrink-0">
+      {/* BOTTOM: STEEL RAILROAD TRACK */}
+      <div className="relative w-full h-5 md:h-6 pointer-events-none overflow-hidden flex flex-col justify-end shrink-0">
         <div className="w-full h-1 bg-gradient-to-r from-neutral-700 via-neutral-300 to-neutral-700 shadow-sm" />
         <motion.div
           animate={{ x: -((current * 80) % 40) }}
-          transition={slowFloatingSpring}
+          transition={trainTransitSpring}
           className="w-[200vw] -ml-[50vw] flex justify-between pt-0.5 opacity-50"
         >
-          {[...Array(70)].map((_, tIdx) => (
-            <div key={tIdx} className="w-2 h-3.5 bg-neutral-800 rounded-sm border-t border-neutral-600" />
+          {[...Array(75)].map((_, tIdx) => (
+            <div key={tIdx} className="w-2 h-3 md:h-3.5 bg-neutral-800 rounded-sm border-t border-neutral-600" />
           ))}
         </motion.div>
       </div>
 
-      {/* FOOTER CONTROLS: DUAL SYNC CONTROLLER */}
-      <footer className="relative z-30 w-full px-4 md:px-12 pb-4 md:pb-6 flex items-center justify-between shrink-0">
-        <div className="text-xs font-mono text-neutral-500 hidden md:block">
-          Press <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300">Space</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300">→</kbd> to glide forward
+      {/* ========================================================================= */}
+      {/* MOBILE SPECIFIC: PERMANENTLY FIXED REMOTE DOCK IN THUMB ZONE              */}
+      {/* Locked directly above mobile address bars so it's always accessible       */}
+      {/* ========================================================================= */}
+      <div className="fixed bottom-3 inset-x-3 z-50 md:hidden flex items-center gap-2 p-1.5 rounded-2xl bg-neutral-950/95 border border-neutral-700/90 shadow-[0_15px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl">
+        <button
+          suppressHydrationWarning
+          onClick={prevSlide}
+          disabled={current === 0}
+          className="flex-1 h-12 rounded-xl bg-neutral-900 border border-neutral-700 active:bg-neutral-800 text-white font-bold text-xs flex items-center justify-center gap-1 disabled:opacity-20 active:scale-95 transition"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span>PREV</span>
+        </button>
+
+        <div className="px-2 font-mono text-center">
+          <span className="text-white font-bold text-xs">{String(current + 1).padStart(2, "0")}</span>
+          <span className="text-neutral-500 text-[10px]">/{String(SLIDES.length).padStart(2, "0")}</span>
         </div>
 
-        {/* Action Buttons for Mobile & Desktop */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-center">
+        <button
+          suppressHydrationWarning
+          onClick={nextSlide}
+          disabled={current === SLIDES.length - 1}
+          className="flex-[1.3] h-12 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 active:from-amber-500 active:to-orange-600 text-black font-black text-xs flex items-center justify-center gap-1 shadow-lg shadow-amber-500/25 disabled:opacity-20 active:scale-95 transition"
+        >
+          <span>NEXT</span>
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* DESKTOP FOOTER CONTROLS                                                   */}
+      {/* ========================================================================= */}
+      <footer className="relative z-30 w-full px-12 pb-5 hidden md:flex items-center justify-between shrink-0">
+        <div className="text-xs font-mono text-neutral-500">
+          Press <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300">Space</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300">→</kbd> to advance train
+        </div>
+
+        <div className="flex items-center gap-3">
           <button
             suppressHydrationWarning
             onClick={prevSlide}
             disabled={current === 0}
-            className="flex-1 md:flex-initial h-12 md:h-10 px-5 rounded-xl md:rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 text-xs font-medium text-neutral-200 disabled:opacity-20 transition active:scale-95 flex items-center justify-center gap-2"
+            className="h-10 px-5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 text-xs font-medium text-neutral-200 disabled:opacity-20 transition active:scale-95 flex items-center justify-center gap-2"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>Prev Cabin</span>
           </button>
 
-          <span className="text-xs font-mono font-bold text-neutral-400 md:hidden">
+          <span className="text-xs font-mono text-neutral-400 px-2">
             {current + 1} / {SLIDES.length}
           </span>
 
@@ -926,13 +1019,12 @@ export default function TrainCabinDeck() {
             suppressHydrationWarning
             onClick={nextSlide}
             disabled={current === SLIDES.length - 1}
-            className="flex-1 md:flex-initial h-12 md:h-10 px-6 rounded-xl md:rounded-full bg-white hover:bg-neutral-200 text-black text-xs font-bold disabled:opacity-20 transition active:scale-95 flex items-center justify-center gap-2 shadow-lg"
+            className="h-10 px-6 rounded-full bg-white hover:bg-neutral-200 text-black text-xs font-bold disabled:opacity-20 transition active:scale-95 flex items-center justify-center gap-2 shadow-lg"
           >
             <span>Next Cabin</span>
             <ChevronRight className="w-4 h-4" />
           </button>
 
-          {/* Fullscreen Button on PC */}
           <button
             suppressHydrationWarning
             onClick={() => {
@@ -943,13 +1035,13 @@ export default function TrainCabinDeck() {
               }
             }}
             title="Fullscreen"
-            className="hidden md:flex p-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 transition"
+            className="p-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 transition"
           >
             <Maximize2 className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="text-xs font-mono text-neutral-500 hidden md:block">
+        <div className="text-xs font-mono text-neutral-500">
           Press <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300">F</kbd> for Fullscreen
         </div>
       </footer>
