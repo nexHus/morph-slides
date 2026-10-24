@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Transition } from "framer-motion";
 import { 
   Compass, 
   Sparkles, 
@@ -271,6 +271,14 @@ const TRAIN_FLEET: TrainCarriage[] = [
   }
 ];
 
+// Explicitly typed Transition for strict TypeScript checks
+const trainSpring: Transition = {
+  type: "spring",
+  stiffness: 85,
+  damping: 18,
+  mass: 1.25,
+};
+
 export default function TrainDeckFullScreen() {
   const [boarded, setBoarded] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -374,14 +382,6 @@ export default function TrainDeckFullScreen() {
 
   const activeCar = TRAIN_FLEET[current];
 
-  // Heavy mechanical momentum spring physics
-  const trainSpring = {
-    type: "spring",
-    stiffness: 85,
-    damping: 18,
-    mass: 1.25,
-  };
-
   return (
     <main
       onClick={() => {
@@ -441,7 +441,7 @@ export default function TrainDeckFullScreen() {
         )}
       </AnimatePresence>
 
-      {/* Dynamic Ambient Glow corresponding to active carriage */}
+      {/* Dynamic Ambient Glow */}
       <motion.div
         animate={{ backgroundColor: activeCar.accentHex }}
         transition={{ duration: 0.9 }}
@@ -534,15 +534,13 @@ export default function TrainDeckFullScreen() {
                       : "bg-[#111116]/95 border-neutral-800 shadow-2xl shadow-black/90"
                   }`}
                 >
-                  {/* ENGINE SPECIFIC: High-Power Glowing Headlight Beam & Rising Steam */}
+                  {/* ENGINE SPECIFIC: High-Power Glowing Headlight Beam & Steam */}
                   {car.isEngine && (
                     <>
-                      {/* Headlight Beam */}
                       <div className="absolute top-1/2 -left-48 -translate-y-1/2 w-64 h-48 pointer-events-none overflow-visible">
                         <div className="w-full h-full bg-gradient-to-l from-amber-400/50 via-amber-200/20 to-transparent blur-2xl" />
                       </div>
 
-                      {/* Steam Funnel */}
                       <div className="absolute -top-14 left-24 flex flex-col items-center pointer-events-none">
                         <div className="w-8 h-12 bg-neutral-800 rounded-t-lg border border-neutral-600 border-b-0 shadow-lg" />
                         {[...Array(4)].map((_, pIdx) => (
@@ -567,7 +565,7 @@ export default function TrainDeckFullScreen() {
                     </>
                   )}
 
-                  {/* Carriage Top Rivet Header */}
+                  {/* Carriage Header */}
                   <div className="flex items-center justify-between pb-4 border-b border-neutral-700/30 mb-8">
                     <div className="flex items-center gap-4">
                       <div className={`p-3 rounded-2xl bg-gradient-to-br ${car.accent} text-white shadow-lg`}>
@@ -595,9 +593,8 @@ export default function TrainDeckFullScreen() {
                     </div>
                   </div>
 
-                  {/* Carriage Content Grid: Expansive Full Screen Split */}
+                  {/* Carriage Content Grid */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-                    {/* Left Column: Narrative & Values */}
                     <div className="lg:col-span-7 flex flex-col gap-5">
                       <h1 className={`text-4xl md:text-6xl font-black tracking-tight leading-[1.08] ${
                         isLightMode ? "text-neutral-900" : "text-white"
@@ -623,7 +620,6 @@ export default function TrainDeckFullScreen() {
                         {car.description}
                       </p>
 
-                      {/* Technical Specs */}
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2">
                         {car.specs.map((sp, sIdx) => (
                           <div
@@ -645,7 +641,6 @@ export default function TrainDeckFullScreen() {
                       </div>
                     </div>
 
-                    {/* Right Column: Panoramic Train Window */}
                     <div className="lg:col-span-5 flex justify-center">
                       <div className={`relative w-full aspect-[4/3] lg:aspect-[5/4] rounded-[28px] overflow-hidden border-4 ${
                         isLightMode ? "border-neutral-200 bg-neutral-100" : "border-neutral-800 bg-neutral-900"
@@ -665,7 +660,7 @@ export default function TrainDeckFullScreen() {
                     </div>
                   </div>
 
-                  {/* STEEL WHEELS & SUSPENSION */}
+                  {/* STEEL WHEELS */}
                   <div className="absolute -bottom-6 left-16 right-16 flex justify-between pointer-events-none">
                     <div className="flex items-center gap-4 bg-neutral-900 px-4 py-1.5 rounded-full border border-neutral-700 shadow-lg">
                       <motion.div 
@@ -695,7 +690,7 @@ export default function TrainDeckFullScreen() {
                   </div>
                 </motion.div>
 
-                {/* GANGWAY BELLOWS (Coupler linking the carriages) */}
+                {/* GANGWAY BELLOWS */}
                 {idx < TRAIN_FLEET.length - 1 && (
                   <div 
                     style={{ width: "64px" }} 
@@ -744,7 +739,6 @@ export default function TrainDeckFullScreen() {
           Press <kbd className="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300">H</kbd> for Horn • <kbd className="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300">→</kbd> to move train
         </div>
 
-        {/* Central Capsule */}
         <div className={`flex items-center gap-4 px-6 py-2.5 rounded-full border shadow-2xl backdrop-blur-2xl transition-all mx-auto sm:mx-0 ${
           isLightMode
             ? "bg-white/90 border-neutral-300 text-neutral-800"
@@ -774,7 +768,6 @@ export default function TrainDeckFullScreen() {
 
           <div className="h-4 w-[1px] bg-neutral-300 dark:bg-neutral-700 mx-1" />
 
-          {/* Mute Audio */}
           <button
             onClick={() => setIsMuted(!isMuted)}
             title="Mute Audio (M)"
@@ -783,7 +776,6 @@ export default function TrainDeckFullScreen() {
             {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-neutral-400" />}
           </button>
 
-          {/* Theme Toggle */}
           <button
             onClick={() => setIsLightMode(!isLightMode)}
             title="Toggle Clean Light / Dark (T)"
@@ -792,7 +784,6 @@ export default function TrainDeckFullScreen() {
             {isLightMode ? <Moon className="w-4 h-4 text-neutral-600" /> : <Sun className="w-4 h-4 text-amber-400" />}
           </button>
 
-          {/* Fullscreen */}
           <button
             onClick={() => {
               if (typeof document !== "undefined") {
